@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timedelta
 import pytz
 import re
+import uuid
 
 printed_next_repoll = False
 
@@ -125,7 +126,9 @@ def load_open_trades():
                         'sl': row[5],
                         'open_time': row[6],
                         'rationale': row[7],
-                        'position_id': row[8] if len(row) > 8 else ''
+                        'position_id': row[8] if len(row) > 8 else '',
+                        'recommendation_id': row[9] if len(row) > 9 else '',
+                        'heat_score': row[10] if len(row) > 10 else ''
                     }
     except (FileNotFoundError, StopIteration):
         pass
@@ -136,11 +139,13 @@ def save_open_trades(open_trades):
     print(f"DEBUG: save_open_trades called with {len(open_trades)} trades")
     with open(open_trades_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(["Ticket", "Symbol", "Recommendation", "Entry Price", "Take Profit", "Stop Loss", "Open Time", "Rationale", "Position ID"])
+        writer.writerow(["Ticket", "Symbol", "Recommendation", "Entry Price", "Take Profit", "Stop Loss", "Open Time", "Rationale", "Position ID", "Recommendation_ID", "Heat_Score"])
         for ticket, trade in open_trades.items():
             writer.writerow([
                 ticket, trade['symbol'], trade['rec'], trade['entry'],
-                trade['tp'], trade['sl'], trade['open_time'], trade['rationale'], trade.get('position_id', '')
+                trade['tp'], trade['sl'], trade['open_time'], trade['rationale'], 
+                trade.get('position_id', ''), trade.get('recommendation_id', ''), 
+                trade.get('heat_score', '')
             ])
     print(f"DEBUG: save_open_trades completed, wrote {len(open_trades)} trades to {open_trades_file}")
 
@@ -616,13 +621,18 @@ def update_single_symbol(yahoo_symbol):
             if heat_score >= heat_threshold and recommendation != "Neutral" and entry_price > 0 and exit_price > 0 and take_profit > 0 and stop_loss > 0 and rationale.strip():
                 today = datetime.now().strftime("%Y-%m-%d")
                 time_stamp = datetime.now().strftime("%H:%M:%S")
-                rows_dict[yahoo_symbol] = [today, time_stamp, yahoo_symbol, recommendation, str(heat_score), str(entry_price), str(exit_price), str(take_profit), str(stop_loss), rationale]
+                # Generate unique Recommendation_ID
+                recommendation_id = str(uuid.uuid4())
+                # Keep existing recommendation_id if symbol is already in dict
+                if yahoo_symbol in rows_dict and len(rows_dict[yahoo_symbol]) > 10:
+                    recommendation_id = rows_dict[yahoo_symbol][10]
+                rows_dict[yahoo_symbol] = [today, time_stamp, yahoo_symbol, recommendation, str(heat_score), str(entry_price), str(exit_price), str(take_profit), str(stop_loss), rationale, recommendation_id]
             else:
                 if yahoo_symbol in rows_dict:
                     del rows_dict[yahoo_symbol]
             with open(csv_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Date", "Time", "Symbol", "Recommendation", "Heat Score", "Entry Price", "Exit Price", "Take Profit", "Stop Loss", "Rationale"])
+                writer.writerow(["Date", "Time", "Symbol", "Recommendation", "Heat Score", "Entry Price", "Exit Price", "Take Profit", "Stop Loss", "Rationale", "Recommendation_ID"])
                 for symbol in sorted(rows_dict.keys()):
                     writer.writerow(rows_dict[symbol])
         else:
@@ -749,15 +759,36 @@ def log_closed_trades():
             except FileNotFoundError:
                 with open(trade_performance_file, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
-                    writer.writerow(["Date Opened", "Time Opened", "Symbol", "Recommendation", "Entry Price", "Take Profit", "Stop Loss", "Ticket", "Date Closed", "Time Closed", "Close Price", "Profit/Loss", "Rationale"])
+                    writer.writerow(["Recommendation_ID", "Date Opened", "Time Opened", "Symbol", "Recommendation", "Heat_Score", "Entry Price", "Take Profit", "Stop Loss", "Ticket", "Date Closed", "Time Closed", "Close Price", "Profit/Loss", "Original_Rationale", "Duration_Hours"])
+            
+            # Parse open_time and calculate duration
+            try:
+                open_time = datetime.fromisoformat(trade['open_time'])
+            except (ValueError, KeyError):
+                # Fallback for old format
+                open_time = datetime.strptime(trade['open_time'][:19], '%Y-%m-%d %H:%M:%S') if 'T' not in trade['open_time'] else datetime.fromisoformat(trade['open_time'])
+            
+            duration_hours = round((close_time - open_time).total_seconds() / 3600, 2)
             
             with open(trade_performance_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    trade['open_time'][:10], trade['open_time'][11:19], trade['symbol'], trade['rec'],
-                    trade['entry'], trade['tp'], trade['sl'], str(deal.position_id),
-                    close_time.strftime('%Y-%m-%d'), close_time.strftime('%H:%M:%S'),
-                    deal.price, total_profit, trade['rationale']
+                    trade.get('recommendation_id', ''),
+                    open_time.strftime('%Y-%m-%d'), 
+                    open_time.strftime('%H:%M:%S'), 
+                    trade['symbol'], 
+                    trade['rec'],
+                    trade.get('heat_score', ''),
+                    trade['entry'], 
+                    trade['tp'], 
+                    trade['sl'], 
+                    str(deal.position_id),
+                    close_time.strftime('%Y-%m-%d'), 
+                    close_time.strftime('%H:%M:%S'),
+                    deal.price, 
+                    total_profit, 
+                    trade['rationale'],
+                    duration_hours
                 ])
             # Remove from open_trades
             del open_trades[str(deal.position_id)]
@@ -785,7 +816,7 @@ def track_automatic_closures(current_positions):
     # Find trades that are in CSV but not in current positions (they were closed)
     closed_trades = []
     removed_old = []
-    for ticket, trade in open_trades.items():
+    for ticket, trade in list(open_trades.items()):
         if ticket not in current_tickets:
             position_id = trade.get('position_id', '')
             if position_id:
@@ -809,10 +840,13 @@ def track_automatic_closures(current_positions):
     from_date = datetime.now() - timedelta(days=30)  # Look back 30 days for closing deals
     print(f"DEBUG: Getting deal history from {from_date} to {datetime.now()}")
     deals = mt5.history_deals_get(from_date, datetime.now())
-    deals = sorted(deals, key=lambda d: d.time, reverse=True) if deals else []
-    print(f"DEBUG: mt5.history_deals_get returned: {deals}")
     if deals is None:
         print("Failed to get deal history for closed trades")
+        # Still remove from open_trades since they're not open
+        for ticket, _ in closed_trades:
+            if ticket in open_trades:
+                del open_trades[ticket]
+        save_open_trades(open_trades)
         return
 
     print(f"DEBUG: Found {len(deals)} deals in history")
@@ -825,7 +859,7 @@ def track_automatic_closures(current_positions):
         save_open_trades(open_trades)
         return
 
-    # Group deals by position_id
+    # Group deals by position_id for easier lookup
     deals_by_position = {}
     for deal in deals:
         pos_id = str(deal.position_id)
@@ -845,48 +879,93 @@ def track_automatic_closures(current_positions):
                 # File is empty, no header
                 pass
             for row in reader:
-                if len(row) > 7:
-                    logged.add(row[7])  # ticket column
+                if len(row) > 9:
+                    logged.add(row[9])  # ticket column (now at index 9)
     except FileNotFoundError:
         # Create file with header if it doesn't exist
         with open(trade_performance_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(["Date Opened", "Time Opened", "Symbol", "Recommendation", "Entry Price", "Take Profit", "Stop Loss", "Ticket", "Date Closed", "Time Closed", "Close Price", "Profit/Loss", "Rationale"])
+            writer.writerow(["Recommendation_ID", "Date Opened", "Time Opened", "Symbol", "Recommendation", "Heat_Score", "Entry Price", "Take Profit", "Stop Loss", "Ticket", "Date Closed", "Time Closed", "Close Price", "Profit/Loss", "Original_Rationale", "Duration_Hours"])
 
     # Process each closed trade
     for ticket, position_id in closed_trades:
         if ticket in logged:
             # Already logged, just remove from open_trades
-            del open_trades[ticket]
+            if ticket in open_trades:
+                del open_trades[ticket]
             continue
 
-        trade = open_trades[ticket]
-        symbol = trade['symbol'].replace('-', '')  # Normalize symbol to match MT5 deal symbols
+        trade = open_trades.get(ticket)
+        if not trade:
+            continue
+            
+        # Get MT5 symbol (normalize Yahoo symbol)
+        yahoo_symbol = trade['symbol']
+        mt5_symbol = symbols_mt5.get(yahoo_symbol, yahoo_symbol.replace('-', ''))
+        
+        # Parse open time
         open_time_str = trade['open_time']
-        open_time = datetime.strptime(open_time_str, '%Y-%m-%dT%H:%M:%S.%f')
-        closing_deals = [deal for deal in deals if deal.symbol == symbol and deal.entry == mt5.DEAL_ENTRY_OUT and deal.time > open_time.timestamp()]
+        try:
+            open_time = datetime.fromisoformat(open_time_str)
+        except ValueError:
+            # Try alternative format
+            try:
+                open_time = datetime.strptime(open_time_str[:19], '%Y-%m-%dT%H:%M:%S')
+            except ValueError:
+                print(f"Could not parse open_time for ticket {ticket}: {open_time_str}")
+                continue
+        
+        # Find closing deals for this position using position_id
+        position_deals = deals_by_position.get(position_id, [])
+        closing_deals = [deal for deal in position_deals 
+                        if deal.entry == mt5.DEAL_ENTRY_OUT 
+                        and deal.time >= open_time.timestamp()]
+        
         if not closing_deals:
-            print(f"No closing deals found for ticket {ticket}")
+            print(f"No closing deals found for position_id {position_id} (ticket {ticket})")
+            # Still remove from open trades as it's not open anymore
+            if ticket in open_trades:
+                del open_trades[ticket]
             continue
 
-        total_profit = sum(deal.profit for deal in closing_deals)
-        close_time = datetime.fromtimestamp(closing_deals[0].time)
-        close_price = closing_deals[0].price
+        # Calculate total profit from all deals for this position
+        total_profit = sum(deal.profit for deal in position_deals if deal.profit is not None)
+        
+        # Use the first closing deal for close time and price
+        close_deal = closing_deals[0]
+        close_time = datetime.fromtimestamp(close_deal.time)
+        close_price = close_deal.price
+        
+        # Calculate duration
+        duration_hours = round((close_time - open_time).total_seconds() / 3600, 2)
 
         # Log to performance CSV
         with open(trade_performance_file, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow([
-                open_time_str[:10], open_time_str[11:19], trade['symbol'], trade['rec'],
-                trade['entry'], trade['tp'], trade['sl'], ticket,
-                close_time.strftime('%Y-%m-%d'), close_time.strftime('%H:%M:%S'),
-                close_price, total_profit, trade['rationale']
+                trade.get('recommendation_id', ''),
+                open_time.strftime('%Y-%m-%d'), 
+                open_time.strftime('%H:%M:%S'),
+                trade['symbol'], 
+                trade['rec'],
+                trade.get('heat_score', ''),
+                trade['entry'], 
+                trade['tp'], 
+                trade['sl'], 
+                ticket,
+                close_time.strftime('%Y-%m-%d'), 
+                close_time.strftime('%H:%M:%S'),
+                close_price, 
+                total_profit, 
+                trade['rationale'],
+                duration_hours
             ])
 
         print(f"Logged closed trade: {trade['symbol']} ticket {ticket}, P/L: {total_profit}")
 
         # Remove from open_trades
-        del open_trades[ticket]
+        if ticket in open_trades:
+            del open_trades[ticket]
 
     # Save updated open_trades
     save_open_trades(open_trades)
@@ -1007,7 +1086,7 @@ def run_heat_seeker():
     # -------------------------
     with open(csv_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(["Date", "Time", "Symbol", "Recommendation", "Heat Score", "Entry Price", "Exit Price", "Take Profit", "Stop Loss", "Rationale"])
+        writer.writerow(["Date", "Time", "Symbol", "Recommendation", "Heat Score", "Entry Price", "Exit Price", "Take Profit", "Stop Loss", "Rationale", "Recommendation_ID"])
 
     # -------------------------
     # PROCESS SYMBOLS
@@ -1191,7 +1270,8 @@ def run_heat_seeker():
                             # Save if Heat Score ≥ threshold and not Neutral, AND all price fields are valid
                             if (heat_score >= heat_threshold and recommendation != "Neutral" and
                                 entry_price > 0 and exit_price > 0 and take_profit > 0 and stop_loss > 0 and rationale.strip()):
-                                high_heat_symbols.append([today, time_stamp, rec_symbol, recommendation, heat_score, entry_price, exit_price, take_profit, stop_loss, rationale])
+                                recommendation_id = str(uuid.uuid4())
+                                high_heat_symbols.append([today, time_stamp, rec_symbol, recommendation, heat_score, entry_price, exit_price, take_profit, stop_loss, rationale, recommendation_id])
                             elif heat_score >= heat_threshold and recommendation != "Neutral":
                                 print(f"Skipping {rec_symbol} - incomplete or invalid price data (Entry: {entry_price}, Exit: {exit_price}, TP: {take_profit}, SL: {stop_loss})")
                         else:
@@ -1230,12 +1310,28 @@ def run_heat_seeker():
     # OPEN TRADES IN MT5
     # -------------------------
     if connect_mt5():
+        # Load recommendations with their IDs and heat scores
+        recommendations_dict = {}
+        try:
+            with open(csv_file, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader)  # skip header
+                for row in reader:
+                    if len(row) >= 11:
+                        symbol = row[2]
+                        recommendations_dict[symbol] = {
+                            'recommendation_id': row[10],
+                            'heat_score': row[4]
+                        }
+        except (FileNotFoundError, IndexError):
+            pass
+            
         with open(csv_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             next(reader)  # skip header
             for row in reader:
-                row_data = row + [""] * (10 - len(row))
-                date, _, symbol, rec, heat, entry, exit_p, tp, sl, rationale = row_data
+                row_data = row + [""] * (11 - len(row))
+                date, _, symbol, rec, heat, entry, exit_p, tp, sl, rationale, recommendation_id = row_data
                 mt5_symbol = symbols_mt5.get(symbol, symbol)
                 direction = 0 if rec == "Buy" else 1
                 positions = mt5.positions_get(symbol=mt5_symbol)
@@ -1262,7 +1358,9 @@ def run_heat_seeker():
                                 'sl': sl,
                                 'rationale': rationale,
                                 'open_time': datetime.now().isoformat(),
-                                'position_id': str(position_id)
+                                'position_id': str(position_id),
+                                'recommendation_id': recommendation_id,
+                                'heat_score': heat
                             }
                             save_open_trades(open_trades)
                     else:
