@@ -220,6 +220,7 @@ Based on an advanced synthesis of real-time technical analysis from the intraday
 Symbol: {symbol}, Recommendation: <Buy/Sell/Neutral>, Heat Score: <0-10>, Entry Price: <numerical_value>, Exit Price: <numerical_value>, Take Profit: <numerical_value>, Stop Loss: <numerical_value>, Rationale: <A concise explanation (3-5 sentences) of the primary intraday technical and immediate fundamental factors driving your recommendation, confidence level, and the reasoning behind the suggested entry, exit, TP, and SL levels. State the expected time frame (1-2 hours or up to 6 hours).>
 """
     try:
+        print(f"🤖 Sending AI prompt for {symbol}...")
         # -------------------------
         # NEW GEMINI API CALL
         # -------------------------
@@ -232,6 +233,7 @@ Symbol: {symbol}, Recommendation: <Buy/Sell/Neutral>, Heat Score: <0-10>, Entry 
         )
 
         text = response.text.strip()
+        print(f"✅ AI Response received for {symbol}: {text[:300]}...")
         return text
     except Exception as e:
         print(f"AI error for {symbol}: {e}")
@@ -1047,7 +1049,7 @@ def run_heat_seeker():
     # Close counts functionality removed
 
     # Check if cached recommendations are recent (<6 hours)
-    use_cache = True  # Temporarily use cache to test trade opening without polling
+    use_cache = False  # Enable AI polling for actual recommendations
     cached_symbols = []
     try:
         with open(csv_file, 'r', encoding='utf-8') as f:
@@ -1102,6 +1104,7 @@ def run_heat_seeker():
         # Process only crypto symbols (24/7 market)
         for category in ["crypto"]:  # Only crypto now
             if category in symbols:
+                print(f"🔄 Processing {len(symbols[category])} crypto symbols: {symbols[category]}")
                 for symbol in symbols[category]:
                     try:
                         yahoo_symbol = symbol
@@ -1218,8 +1221,10 @@ def run_heat_seeker():
                         current_bid = tick.bid if tick else None
                         current_ask = tick.ask if tick else None
                         
-                        mt5.shutdown()
                         recent_news_alerts = fetch_headlines(yahoo_symbol)
+                        print(f"🔍 Processing {yahoo_symbol} -> {mt5_symbol}")
+                        print(f"📊 Recent news alerts: {recent_news_alerts[:100]}...")
+                        print(f"📈 Intraday data points: {len(combined_data_sorted)}")
                         result = get_ai_recommendation(yahoo_symbol, recent_intraday_data, recent_news_alerts, current_bid, current_ask)
                         if result:
                             print(f"AI Response for {yahoo_symbol}: {result[:200]}...")  # Debug: show first 200 chars
@@ -1258,14 +1263,6 @@ def run_heat_seeker():
                                 heat_score = max(heat_score, ai_heat_score)  # Same as ai_heat_score
 
                             print(f"{rec_symbol} -> {recommendation} | Heat Score: {heat_score} | Entry: {entry_price} | Exit: {exit_price} | TP: {take_profit} | SL: {stop_loss}")
-
-                            # Temporary: force Buy for BTC-USD to test saving
-                            if yahoo_symbol == 'BTC-USD':
-                                recommendation = 'Buy'
-                                heat_score = 10
-                                take_profit = entry_price + 1000  # Ensure TP > entry for buy
-                                stop_loss = entry_price - 500    # Ensure SL < entry for buy
-                                rationale = 'Forced Buy for testing'
 
                             # Save if Heat Score ≥ threshold and not Neutral, AND all price fields are valid
                             if (heat_score >= heat_threshold and recommendation != "Neutral" and
@@ -1384,8 +1381,9 @@ def check_profits():
             mt5.shutdown()
             return
 
-        # Track automatic closures (SL/TP hits)
-        track_automatic_closures(positions)
+        # Track automatic closures (SL/TP hits) - only if we have positions
+        if positions:
+            track_automatic_closures(positions)
 
         # Update TP/SL for open positions based on latest recommendations
         update_positions_from_recommendations()
@@ -1394,7 +1392,28 @@ def check_profits():
         close_all_positions()
 
         if not positions:
-            # Load last check times
+            # Check if CSV has any recommendations
+            has_recommendations = False
+            try:
+                with open(csv_file, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    next(reader)  # Skip header
+                    # Check if there's at least one data row
+                    for row in reader:
+                        if len(row) >= 4:  # Valid recommendation row
+                            has_recommendations = True
+                            break
+            except (FileNotFoundError, StopIteration):
+                has_recommendations = False
+            
+            # If no recommendations, run immediate AI poll
+            if not has_recommendations:
+                print("No positions and no recommendations found - running immediate AI poll")
+                mt5.shutdown()
+                run_heat_seeker()  # Immediate poll for new opportunities
+                return
+            
+            # Load last check times for scheduling next poll
             try:
                 with open(last_check_file, 'r') as f:
                     last_check = json.load(f)
@@ -1608,7 +1627,7 @@ if __name__ == "__main__":
     run_heat_seeker()  # Run immediately on start
     scan_high_volatility_symbols()  # Run volatility scan immediately on start
     test_get_ticket_details(127012277)  # Test getting ticket details
-    track_automatic_closures([])  # Test logging closed trades
+    # track_automatic_closures([])  # Removed - was clearing saved trades
     while True:
         schedule.run_pending()
         time.sleep(1)
