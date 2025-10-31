@@ -183,7 +183,7 @@ class RealTimeMarketWatcher:
         # Trigger conditions
         significant_price_move = price_change >= price_threshold
         volume_spike = volume_change >= self.volume_threshold
-        time_overdue = time_since_analysis >= timedelta(minutes=5)  # Force analysis every 5 min minimum
+        time_overdue = time_since_analysis >= timedelta(minutes=20)  # Force analysis every 20 min minimum
 
         if significant_price_move or volume_spike or time_overdue:
             print(f"🎯 Market event detected for {symbol}:")
