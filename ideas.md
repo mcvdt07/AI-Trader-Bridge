@@ -111,7 +111,573 @@ confidence = calculate_consensus_confidence(swarm_result["responses"])
   - Whale movement alerts
 - **Implementation**: Add whale detection to market analysis
 
-## 🤖 AI & ML Improvements
+## 🤖 **Multi-Agent Trading System Architecture**
+
+Based on the comprehensive TODOS roadmap, here's how to integrate specialized AI agents/bots into your current `heat_seeker.py` system. Each agent has its own prompt and responsibilities, communicating through file-based coordination.
+
+### **Core Agent Architecture**
+
+The system uses a **Coordinator Bot** that routes requests to specialized agents, then aggregates their responses. Each agent writes JSON outputs that other agents can consume.
+
+---
+
+### **1. Market Analysis Agent (Data Scientist)**
+**Role**: Technical analysis expert with multiple sub-agents for comprehensive market analysis.
+
+#### **Main Agent Prompt**:
+```
+You are an elite Market Analysis Agent specializing in technical analysis. Your task is to coordinate multiple sub-agents to provide comprehensive market analysis for {symbol}.
+
+Coordinate the following sub-agents:
+1. Technical Indicator Analyzer - Calculate and interpret indicators
+2. Pattern Recognition - Detect chart and candlestick patterns  
+3. Tick Data Processor - Analyze order flow and liquidity
+4. Chart Analysis - Identify support/resistance and trendlines
+
+Aggregate their findings into a unified market analysis report that includes:
+- Overall trend direction and strength
+- Key support/resistance levels
+- Pattern signals with confidence scores
+- Technical indicator signals
+- Market liquidity assessment
+- Risk assessment for the symbol
+
+Provide a final recommendation confidence score (0-1) based on signal alignment.
+```
+
+#### **Sub-Agent 1: Technical Indicator Analyzer**
+**Prompt**:
+```
+Analyze {symbol} using technical indicators. Calculate:
+
+MOVING AVERAGES: SMA(10,20,50,200), EMA(12,26,50)
+RSI(14): Generate overbought (>70) / oversold (<30) signals
+MACD(12,26,9): Identify crossovers and histogram signals
+Bollinger Bands(20,2σ): Detect squeezes and breakouts
+ATR(14): Measure volatility
+ADX(14): Assess trend strength
+Stochastic(14): Generate oscillator signals
+CCI(20): Identify overbought/oversold conditions
+
+For each indicator, provide:
+- Current value and signal (bullish/bearish/neutral)
+- Confidence score (0-1)
+- Timeframe relevance
+
+Generate an overall technical score based on indicator alignment.
+```
+
+#### **Sub-Agent 2: Pattern Recognition**
+**Prompt**:
+```
+Detect chart and candlestick patterns in {symbol} data.
+
+CANDLESTICK PATTERNS:
+- Doji (reversal signal)
+- Hammer/Shooting Star (reversal)
+- Bullish/Bearish Engulfing (strong reversal)
+- Morning Star/Evening Star (reversal)
+- Three White Soldiers/Three Black Crows (trend continuation)
+
+CHART PATTERNS:
+- Head & Shoulders / Inverse H&S (reversal)
+- Double Top/Bottom (reversal)
+- Triangles (continuation)
+- Flags/Pennants (continuation)
+- Wedges (reversal)
+
+For each detected pattern:
+- Pattern type and direction
+- Confidence score (0-1) based on pattern clarity
+- Price target if applicable
+- Expected timeframe for completion
+
+Provide overall pattern sentiment (bullish/bearish/neutral).
+```
+
+#### **Sub-Agent 3: Tick Data Processor**
+**Prompt**:
+```
+Analyze {symbol} tick data for order flow insights.
+
+Calculate:
+- Total tick volume and average ticks per minute
+- Bid/ask spread analysis (average, min, max, volatility)
+- Order flow imbalance detection
+- Unusual tick patterns (sudden spikes, gaps)
+- Liquidity assessment
+
+Provide:
+- Current market liquidity score (0-1)
+- Order flow direction bias
+- Unusual activity alerts
+- Spread volatility assessment
+```
+
+#### **Sub-Agent 4: Chart Analysis**
+**Prompt**:
+```
+Perform advanced chart analysis for {symbol}.
+
+Identify:
+- Support and resistance levels (using local peaks/troughs)
+- Trendline detection (uptrend/downtrend lines)
+- Fibonacci retracement/extension levels
+- Pivot points calculation
+- Trend strength analysis using ADX
+
+Provide:
+- Key support levels (last 5)
+- Key resistance levels (last 5)  
+- Current trend direction and strength
+- Fibonacci levels from recent swing
+- Pivot point levels (PP, R1-R3, S1-S3)
+```
+
+---
+
+### **2. Sentiment/News Agent (Researcher)**
+**Role**: External information gathering and sentiment analysis expert.
+
+#### **Main Agent Prompt**:
+```
+You are a Sentiment/News Agent responsible for gathering and analyzing external market information for {symbol}.
+
+Coordinate sub-agents to:
+1. Scrape relevant news from financial sources
+2. Monitor social media sentiment
+3. Analyze sentiment using NLP techniques
+4. Track upcoming economic events
+
+Aggregate into a sentiment report including:
+- Overall market sentiment (bullish/bearish/neutral)
+- Sentiment confidence score
+- Key news catalysts
+- Upcoming high-impact events
+- Social media sentiment trends
+- Risk assessment from news flow
+
+Provide sentiment-weighting factor for trade decisions.
+```
+
+#### **Sub-Agent 1: News Scraper**
+**Prompt**:
+```
+Scrape and analyze news for {symbol} from reliable sources.
+
+Sources to monitor:
+- Financial news: Bloomberg, Reuters, Financial Times, WSJ
+- Crypto news: CoinDesk, CoinTelegraph, Decrypt
+- Forex news: ForexLive, FXStreet, DailyFX
+
+For each article:
+- Extract headline, summary, publication time, source
+- Calculate relevance score to {symbol} (0-1)
+- Identify sentiment impact (positive/negative/neutral)
+
+Filter for high-relevance articles (score > 0.7) and provide aggregated news sentiment.
+```
+
+#### **Sub-Agent 2: Social Media Monitor**
+**Prompt**:
+```
+Monitor social media sentiment for {symbol}.
+
+Track:
+- Twitter/X influencers: @michael_saylor, @elonmusk, @VitalikButerin
+- Hashtags: #{symbol}, #Bitcoin, #Crypto, etc.
+- Reddit sentiment from r/cryptocurrency, r/bitcoin
+- Telegram/Discord crypto communities
+
+Calculate:
+- Mention volume and velocity
+- Sentiment scores (positive/negative/neutral)
+- Influencer sentiment (weighted more heavily)
+- Trending status (spike detection)
+
+Provide social sentiment score and unusual activity alerts.
+```
+
+#### **Sub-Agent 3: Sentiment Analyzer**
+**Prompt**:
+```
+Perform NLP sentiment analysis on collected text data for {symbol}.
+
+Use techniques:
+- TextBlob for basic polarity/subjectivity analysis
+- FinBERT for financial text sentiment
+- Custom financial lexicon for domain-specific terms
+
+Aggregate sentiment from:
+- News articles
+- Social media posts
+- Influencer tweets
+
+Provide:
+- Overall sentiment polarity (-1 to 1)
+- Sentiment confidence score
+- Sentiment trend (improving/deteriorating/stable)
+- Key positive/negative themes identified
+```
+
+#### **Sub-Agent 4: Economic Calendar Tracker**
+**Prompt**:
+```
+Track upcoming economic events that could impact {symbol}.
+
+Monitor:
+- Interest rate decisions (Fed, ECB, BOJ)
+- NFP, GDP, CPI, PPI releases
+- Central bank speeches
+- Geopolitical events
+
+For each event:
+- Calculate impact score (0-1) based on event type and currency
+- Time until event
+- Expected vs previous values
+- Historical market reactions
+
+Provide risk assessment for trading during event periods.
+```
+
+---
+
+### **3. Strategy Agent (Strategist)**
+**Role**: Strategy development, testing, and optimization expert.
+
+#### **Main Agent Prompt**:
+```
+You are a Strategy Agent responsible for developing, testing, and optimizing trading strategies for {symbol}.
+
+Coordinate sub-agents to:
+1. Develop rule-based and ML-based strategies
+2. Backtest strategies on historical data
+3. Analyze live performance metrics
+4. Optimize strategy parameters
+
+Provide:
+- Best performing strategies for current market conditions
+- Strategy confidence scores
+- Risk-adjusted performance metrics
+- Parameter optimization recommendations
+- Strategy activation/deactivation recommendations
+```
+
+#### **Sub-Agent 1: Strategy Developer**
+**Prompt**:
+```
+Develop trading strategies for {symbol} based on current market analysis and sentiment data.
+
+Available strategy types:
+1. Momentum Breakout - Buy on volume breakouts above resistance
+2. Mean Reversion - Buy oversold, sell overbought conditions  
+3. Trend Following - Follow ADX-confirmed trends
+4. Sentiment-Driven - Trade based on news/social sentiment
+
+For each strategy:
+- Define entry/exit rules
+- Set stop-loss and take-profit logic
+- Specify position sizing rules
+- Define market condition filters
+
+Provide strategy code and initial parameters.
+```
+
+#### **Sub-Agent 2: Backtester**
+**Prompt**:
+```
+Backtest {strategy} on historical {symbol} data.
+
+Perform:
+- Walk-forward optimization (train/test splits)
+- Monte Carlo simulation for robustness
+- Out-of-sample testing
+- Risk-adjusted performance calculation
+
+Calculate metrics:
+- Total return, Sharpe ratio, max drawdown
+- Win rate, profit factor, average win/loss
+- Maximum consecutive losses
+- Calmar ratio, Sortino ratio
+
+Provide backtest results and strategy robustness assessment.
+```
+
+#### **Sub-Agent 3: Performance Analyzer**
+**Prompt**:
+```
+Analyze live trading performance for {strategy} on {symbol}.
+
+Track:
+- Real-time P&L, win rate, drawdown
+- Performance by time of day, day of week
+- Performance by market conditions (trending/ranging/volatile)
+- Symbol-specific performance
+- Strategy comparison metrics
+
+Provide:
+- Performance attribution analysis
+- Strategy health score (0-1)
+- Early warning signals for underperformance
+- Recommendations for strategy adjustments
+```
+
+#### **Sub-Agent 4: Strategy Optimizer**
+**Prompt**:
+```
+Optimize {strategy} parameters for {symbol} using current market conditions.
+
+Optimization methods:
+- Grid search for parameter combinations
+- Genetic algorithm for complex parameter spaces
+- Bayesian optimization for efficient searching
+- Walk-forward analysis for parameter stability
+
+Optimize for:
+- Sharpe ratio maximization
+- Drawdown minimization
+- Win rate improvement
+- Risk-adjusted returns
+
+Provide optimized parameters and expected improvement.
+```
+
+---
+
+### **4. Risk Management Agent (Guardian)**
+**Role**: Capital protection and risk control expert.
+
+#### **Main Agent Prompt**:
+```
+You are a Risk Management Agent responsible for protecting capital and controlling risk across the trading system.
+
+Monitor and control:
+1. Position sizing based on risk parameters
+2. Stop-loss and take-profit management
+3. Margin and leverage limits
+4. Portfolio diversification rules
+5. Daily/weekly loss limits
+
+For proposed trade on {symbol}:
+- Calculate appropriate position size
+- Set risk-appropriate stop-loss levels
+- Assess portfolio impact
+- Provide approval/rejection recommendation
+- Suggest risk mitigation measures
+```
+
+#### **Position Sizing Calculator**
+**Prompt**:
+```
+Calculate optimal position size for {symbol} trade with {risk_amount} risk per trade.
+
+Methods:
+1. Fixed percentage (1-2% per trade)
+2. Kelly Criterion based on win rate and win/loss ratio
+3. Volatility-adjusted (ATR-based)
+4. Portfolio-based (correlation-adjusted)
+
+Consider:
+- Account equity and margin requirements
+- Symbol volatility and pip values
+- Maximum position size limits
+- Portfolio diversification requirements
+
+Provide recommended lot size and risk explanation.
+```
+
+#### **Stop-Loss Manager**
+**Prompt**:
+```
+Design stop-loss strategy for {symbol} {direction} trade.
+
+Types to consider:
+1. Fixed pip distance
+2. ATR-based (1.5-2x ATR)
+3. Support/resistance based
+4. Percentage-based
+5. Time-based (exit after X hours)
+6. Trailing stops (move with price)
+
+For current market conditions:
+- Recommend stop-loss type and level
+- Calculate risk-reward ratio
+- Suggest trailing stop parameters
+- Provide break-even stop logic
+```
+
+#### **Margin Monitor**
+**Prompt**:
+```
+Monitor account margin levels and provide risk alerts.
+
+Track:
+- Current margin level (%)
+- Free margin available
+- Margin used by positions
+- Leverage in use
+
+Alert thresholds:
+- Safe: >300%
+- Warning: 200-300%
+- Danger: 150-200%
+- Critical: <150%
+
+Provide automated actions for each threshold and emergency procedures.
+```
+
+#### **Portfolio Diversifier**
+**Prompt**:
+```
+Assess portfolio diversification and correlation risk.
+
+Analyze:
+- Current position exposures by symbol
+- Currency pair correlations
+- Sector concentrations
+- Geographic exposures
+
+Enforce rules:
+- Maximum 20% exposure per symbol
+- Maximum 40% exposure per currency
+- Correlation limits (<0.7 between positions)
+- Sector diversification requirements
+
+Provide diversification score and rebalancing recommendations.
+```
+
+---
+
+### **5. Trade Execution Coordinator (Operations Manager)**
+**Role**: Final trade validation and execution orchestration.
+
+#### **Main Agent Prompt**:
+```
+You are the Trade Execution Coordinator responsible for final trade validation and execution orchestration.
+
+For proposed trade on {symbol}:
+1. Validate trade against all agent recommendations
+2. Check risk management approval
+3. Resolve any conflicts between agents
+4. Calculate final position parameters
+5. Execute trade via Python Bridge
+6. Monitor execution and confirm success
+7. Log trade details for performance tracking
+
+Provide execution decision (approve/reject) with detailed reasoning.
+```
+
+#### **Trade Validator**
+**Prompt**:
+```
+Validate proposed {symbol} trade against all criteria.
+
+Required checks:
+- Strategy confidence > 0.65
+- Risk management approval
+- Sentiment alignment (warning if conflicting)
+- Technical confirmation
+- Account margin > 200%
+- No conflicting positions
+- Market liquidity adequate
+- Trading time appropriate
+
+Count passed checks and provide validation score (0-1).
+```
+
+#### **Order Manager**
+**Prompt**:
+```
+Prepare final order parameters for {symbol} trade.
+
+Aggregate inputs from:
+- Strategy agent (entry/exit signals)
+- Risk agent (position size, stops)
+- Market analysis (timing, levels)
+
+Calculate:
+- Final entry price and direction
+- Position size (lot calculation)
+- Stop-loss and take-profit levels
+- Order type (market/limit/stop)
+- Magic number and comments
+
+Provide complete order specification for execution.
+```
+
+#### **Execution Monitor**
+**Prompt**:
+```
+Monitor trade execution and handle any issues.
+
+Track:
+- Order submission confirmation
+- Fill price and slippage
+- Execution time
+- Any partial fills or rejections
+
+Handle errors:
+- Retry failed orders (up to 2 times)
+- Adjust parameters if needed
+- Alert on execution failures
+- Log detailed execution metrics
+```
+
+#### **Trade Logger**
+**Prompt**:
+```
+Log completed trade details for performance analysis.
+
+Record:
+- Trade identification (ticket, symbol, timestamp)
+- Entry/exit prices and times
+- Profit/loss calculation
+- Strategy used and confidence
+- Risk parameters (stop-loss, position size)
+- Market conditions at execution
+- Agent recommendations that led to trade
+
+Store in structured format for backtesting and analysis.
+```
+
+---
+
+### **Integration with Current Heat Seeker**
+
+To integrate these agents into your current `heat_seeker.py`:
+
+1. **Replace single AI call** with multi-agent coordination:
+```python
+# Instead of: result = get_ai_recommendation(symbol, data, news)
+# Use: coordinator_result = coordinator_bot.process_symbol_analysis(symbol)
+```
+
+2. **File-based communication** between agents:
+```python
+# Each agent writes to: /mt5_data/analysis/{agent_name}/{symbol}_{timestamp}.json
+# Other agents read from: glob.glob(f"/mt5_data/analysis/{agent_name}/{symbol}_*.json")[-1]
+```
+
+3. **Coordinator Bot routing**:
+```python
+def process_symbol_analysis(symbol):
+    # Send to Market Analysis Agent
+    market_data = market_agent.analyze(symbol)
+    
+    # Send to Sentiment Agent  
+    sentiment_data = sentiment_agent.analyze(symbol)
+    
+    # Send to Strategy Agent
+    strategy_signal = strategy_agent.generate_signal(symbol, market_data, sentiment_data)
+    
+    # Send to Risk Agent
+    risk_approval = risk_agent.assess_trade(symbol, strategy_signal)
+    
+    # Final coordination
+    return coordinator.make_final_decision(strategy_signal, risk_approval)
+```
+
+This multi-agent architecture provides comprehensive market analysis, risk management, and intelligent trade execution while maintaining the simplicity of your current system.
 
 ### 10. **Dynamic Prompt Engineering**
 **From: Multiple agent prompt systems**
